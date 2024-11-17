@@ -138,6 +138,7 @@ class FunctionsTable:
                     FunctionModel.model_validate(function)
                     for function in db.query(Function)
                     .filter_by(type=type, is_active=True)
+                    .order_by("id")
                     .all()
                 ]
             else:
