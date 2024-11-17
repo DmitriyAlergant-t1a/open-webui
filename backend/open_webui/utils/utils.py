@@ -86,9 +86,14 @@ def get_current_user(
     if token is None:
         raise HTTPException(status_code=403, detail="Not authenticated")
 
-    # auth by api key
+    # auth by api key. For security this is only allowed for model invocation endpoints:
     if token.startswith("sk-"):
-        return get_current_user_by_api_key(token)
+        
+        if request["path"] in ("/api/chat/completions", "/api/models"):
+            return get_current_user_by_api_key(token)
+        else:
+            raise HTTPException(status_code=401, detail="API key authentication cannont be used with this endpoint")
+            
 
     # auth by jwt token
     data = decode_token(token)
