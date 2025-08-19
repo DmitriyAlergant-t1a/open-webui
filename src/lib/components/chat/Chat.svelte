@@ -84,6 +84,7 @@
 	import Navbar from '$lib/components/chat/Navbar.svelte';
 	import ChatControls from './ChatControls.svelte';
 	import EventConfirmDialog from '../common/ConfirmDialog.svelte';
+	import { FileBrowserPanel } from '$lib/components/chat/FileBrowser';
 	import Placeholder from './Placeholder.svelte';
 	import NotificationToast from '../NotificationToast.svelte';
 	import Spinner from '../common/Spinner.svelte';
@@ -129,6 +130,7 @@
 	let codeInterpreterEnabled = false;
 
 	let showCommands = false;
+	let showFileBrowser = false;
 
 	let generating = false;
 	let generationController = null;
@@ -2234,6 +2236,40 @@
 										{onSelect}
 									/>
 								</div>
+							</div>
+
+							<!-- File Browser Panel -->
+							{#if showFileBrowser && $chatId}
+								<FileBrowserPanel 
+									chatId={$chatId}
+									bind:expanded={showFileBrowser}
+								/>
+							{/if}
+
+							<!-- File Browser Toggle Button -->
+							<div class="flex justify-end pb-2">
+								<button
+									class="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+									on:click={() => showFileBrowser = !showFileBrowser}
+									title="Toggle File Browser"
+								>
+									<svg
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										xmlns="http://www.w3.org/2000/svg"
+										class="text-gray-600 dark:text-gray-400"
+									>
+										<path
+											d="M10 4H4C3.44772 4 3 4.44772 3 5V19C3 19.5523 3.44772 20 4 20H20C20.5523 20 21 19.5523 21 19V8C21 7.44772 20.5523 7 20 7H12L10 4Z"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</button>
 							</div>
 
 							<div class=" pb-2">
