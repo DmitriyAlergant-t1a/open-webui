@@ -11,17 +11,24 @@
 	let data = [];
 	let drive = {};
 	let restProvider;
+	let api;
 
 	// Custom RestDataProvider class that adds Authorization header
 	class AuthenticatedRestDataProvider extends RestDataProvider {
 
 		token: string;
+		url: string;
 
 		constructor(baseUrl: string, token: string) {
 			super(baseUrl);
 			this.token = token;
+			this.url = baseUrl;
 		}
-		
+
+		loadFiles(id: string = ''): Promise<any[]> {
+			console.log("AuthenticatedRestDataProvider.loadFiles", id);
+			return super.loadFiles(id);
+		}
 		send<T>(url: string, method: string, data: any, headers: Record<string, string> = {}): Promise<T> {
 			const authHeaders = {
 				...headers,
@@ -34,27 +41,72 @@
 
 	// Initialize RestDataProvider with backend URL and authentication
 	function initializeProvider() {
-		if (!chatId || !$user?.token) return null;
+		if (!chatId || !localStorage?.token) return null;
 		
 		// Create the provider pointing to our sandbox API with authentication
 		const baseUrl = `http://localhost:8080/api/v1/sandboxes/${chatId}`;
-		restProvider = new AuthenticatedRestDataProvider(baseUrl, $user.token);
+		restProvider = new AuthenticatedRestDataProvider(baseUrl, localStorage.token);
 		
 		return restProvider;
+	}
+
+	// Handle dynamic folder loading (lazy loading)
+	function handleRequestData(ev) {
+		console.log('🔍 FOLDER REQUEST EVENT TRIGGERED:', ev);
+		console.log('🔍 Event ID:', ev.id);
+		console.log('🔍 RestProvider available:', !!restProvider);
+		console.log('🔍 API available:', !!api);
+		
+		if (!restProvider || !api) {
+			console.error('❌ RestDataProvider or API not available');
+			return;
+		}
+		
+		// Fetch folder contents from server
+		const folderId = ev.id;
+		const encodedId = encodeURIComponent(folderId);
+		
+		console.log('🌐 Making API call for folder:', folderId);
+		console.log('🌐 URL:', `${restProvider.url}/files?id=${encodedId}`);
+		
+		// Use fetch directly since RestDataProvider's loadFiles doesn't support query params
+		const url = `${restProvider.url}/files?id=${encodedId}`;
+		fetch(url, {
+			headers: {
+				'Authorization': `Bearer ${restProvider.token}`
+			}
+		})
+			.then(response => {
+				console.log('📡 Response status:', response.status);
+				return response.json();
+			})
+			.then((folderData) => {
+				console.log('✅ Loaded folder data:', folderData);
+				// Provide the data back to the filemanager
+				api.exec("provide-data", { data: folderData, id: folderId });
+				console.log('📤 Data provided back to filemanager');
+			})
+			.catch((error) => {
+				console.error('❌ Error loading folder data:', error);
+				toast.error('Failed to load folder contents');
+			});
 	}
 
 	// Initialize the FileManager and connect RestDataProvider
 	function init(api) {
 		console.log('Initializing FileManager API');
+		api = api; // Store API reference for dynamic loading
 		
-		if (!restProvider) {
-			restProvider = initializeProvider();
-		}
-		
-		if (restProvider && api) {
-			api.setNext(restProvider);
-			console.log('RestDataProvider connected to FileManager');
-		}
+		restProvider = initializeProvider();
+
+		api.setNext(restProvider);
+
+		Promise.all([restProvider.loadFiles(), restProvider.loadInfo()]).then(([files, info]) => {
+			data = files;
+			drive = info.stats;
+		});
+
+		console.log('RestDataProvider connected to FileManager');
 
 		// Add event handlers for file operations
 		api.on("download-file", async (ev) => {
@@ -64,7 +116,7 @@
 				
 				const response = await fetch(downloadUrl, {
 					headers: {
-						'Authorization': `Bearer ${$user.token}`
+						'Authorization': `Bearer ${localStorage.token}`
 					}
 				});
 				
@@ -97,7 +149,7 @@
 				
 				const response = await fetch(openUrl, {
 					headers: {
-						'Authorization': `Bearer ${$user.token}`
+						'Authorization': `Bearer ${localStorage.token}`
 					}
 				});
 				
@@ -117,7 +169,7 @@
 
 	// Load initial data using RestDataProvider
 	async function loadData() {
-		if (!chatId || !$user?.token) {
+		if (!chatId || !localStorage?.token) {
 			console.warn('Cannot load data: missing chatId or user token');
 			return;
 		}
@@ -140,10 +192,15 @@
 				restProvider.loadInfo()
 			]);
 			
-			data = files || [];
+			// Mark all folders as lazy for dynamic loading
+			data = (files || []).map(item => ({
+				...item,
+				lazy: item.type === "folder" ? true : undefined
+			}));
 			drive = info?.stats || { used: 0, total: 0 };
 			
-			console.log('Data loaded successfully:', { files: data, drive });
+			console.log('📂 Data loaded successfully:', { files: data, drive });
+			console.log('📂 Folders marked as lazy:', data.filter(item => item.lazy).map(item => item.id));
 			
 		} catch (error) {
 			console.error('Failed to load data:', error);
@@ -158,13 +215,14 @@
 		loadData();
 	});
 
-	// Reload data when chatId or user token changes
-	$: if (chatId || $user?.token) {
-		restProvider = null; // Reset provider for new chat or token change
+	// Reload data when chatId changes
+	$: if (chatId) {
+		restProvider = null; // Reset provider for new chat
 		loadData();
 	}
 </script>
 
+<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
     class="file-browser-container sticky-top"
     style="height: {height}; z-index: 9000; position: sticky; top: 0;"

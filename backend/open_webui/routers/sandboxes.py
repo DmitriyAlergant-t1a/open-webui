@@ -89,7 +89,8 @@ def build_file_tree(base_path: Path, relative_path: str = "") -> List[dict]:
                 items.append({
                     "id": folder_id,
                     "date": stat.st_mtime * 1000,  # SVAR expects milliseconds
-                    "type": "folder"
+                    "type": "folder",
+                    "lazy": True  # Enable dynamic loading for folders
                 })
     except PermissionError:
         log.warning(f"Permission denied accessing {current_path}")
@@ -233,19 +234,92 @@ async def delete_sandbox_file(
         )
 
 
-@router.post("/{chat_id}/files")
+@router.post("/{chat_id}/files/{path:path}")
 async def create_file_or_folder(
     chat_id: str,
+    path: str,
+    request: Request,
     user=Depends(get_verified_user)
 ):
     """Create a new file or folder - compatible with RestDataProvider"""
-    from fastapi import Request
+    import json
     
     verify_chat_access(chat_id, user.id)
     
-    # This endpoint handles both file creation and folder creation
-    # RestDataProvider will send different request bodies for different operations
-    return {"message": "Create operation received"}
+    # Get the request body to extract creation details
+    body = await request.body()
+    if not body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Request body is required"
+        )
+    
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON in request body"
+        )
+    
+    name = data.get("name")
+    item_type = data.get("type")
+    
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'name' parameter is required"
+        )
+    
+    if item_type not in ["file", "folder"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'type' must be either 'file' or 'folder'"
+        )
+    
+    sandbox_path = get_sandbox_path(chat_id)
+    sandbox_path.mkdir(parents=True, exist_ok=True)
+    
+    # Handle path parameter - remove leading slash and decode
+    safe_path = sanitize_path(path.lstrip("/")) if path != "/" else ""
+    target_dir = sandbox_path / safe_path if safe_path else sandbox_path
+    
+    new_item_path = target_dir / name
+    
+    try:
+        if item_type == "folder":
+            new_item_path.mkdir(parents=True, exist_ok=False)
+            # Return folder info in SVAR format
+            folder_id = "/" + str(new_item_path.relative_to(sandbox_path))
+            stat = new_item_path.stat()
+            return {
+                "id": folder_id,
+                "date": stat.st_mtime * 1000,
+                "type": "folder",
+                "lazy": True
+            }
+        else:  # file
+            new_item_path.touch(exist_ok=False)
+            # Return file info in SVAR format
+            file_id = "/" + str(new_item_path.relative_to(sandbox_path))
+            stat = new_item_path.stat()
+            return {
+                "id": file_id,
+                "size": stat.st_size,
+                "date": stat.st_mtime * 1000,
+                "type": "file"
+            }
+    except FileExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{item_type.capitalize()} already exists"
+        )
+    except Exception as e:
+        log.error(f"Error creating {item_type}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create {item_type}"
+        )
 
 
 @router.post("/{chat_id}/folders")
