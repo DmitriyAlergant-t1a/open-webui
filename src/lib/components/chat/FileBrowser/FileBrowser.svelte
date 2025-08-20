@@ -1,112 +1,125 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { RestDataProvider } from 'wx-filemanager-data-provider';
 	import { Filemanager, Willow } from 'wx-svelte-filemanager';
-	import {
-		getSandboxFiles,
-		uploadSandboxFile,
-		deleteSandboxFile,
-		createSandboxFolder,
-		renameSandboxFile,
-		downloadSandboxFile,
-		type FileItem
-	} from '$lib/apis/sandboxes';
 	import { user } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
 
 	export let chatId: string;
 	export let height: string = '400px';
 
-	let files: FileItem[] = [];
-	let loading = false;
-	
-	async function loadFiles(path: string = '') {
-		if (!$user?.token || !chatId) return;
+	let data = [];
+	let drive = {};
+	let restProvider;
 
-		loading = true;
-		try {
-			console.log('Loading files for path:', path);
-			const result = await getSandboxFiles($user.token, chatId, path);
-			files = result || [];
-		} catch (error) {
-			console.error('Failed to load files:', error);
-			files = [];
-		} finally {
-			loading = false;
+	// Custom RestDataProvider class that adds Authorization header
+	class AuthenticatedRestDataProvider extends RestDataProvider {
+
+		token: string;
+
+		constructor(baseUrl: string, token: string) {
+			super(baseUrl);
+			this.token = token;
+		}
+		
+		send<T>(url: string, method: string, data: any, headers: Record<string, string> = {}): Promise<T> {
+			const authHeaders = {
+				...headers,
+				'Authorization': `Bearer ${this.token}`
+			};
+			
+			return super.send<T>(url, method, data, authHeaders);
 		}
 	}
-	
-	// Convert our FileItem format to SVAR format
-	$: svarData = Array.isArray(files) ? files.map(file => {
-		const fileName = file.name || file.id.split('/').pop() || file.id;
-		return {
-			id: `/${fileName}`,
-			size: file.size,
-			date: new Date(parseFloat(file.date) * 1000),
-			type: file.type
-		};
-	}) : [];
 
-	onMount(() => {
-		loadFiles();
-	});
-	
-	// Create API configuration for SVAR FileManager
-	let api = {
-		read: async (path = '') => {
-			console.log('SVAR API: read called with path:', path);
-			if (!$user?.token || !chatId) return [];
-			
-			try {
-				const result = await getSandboxFiles($user.token, chatId, path);
-				return Array.isArray(result) ? result.map(file => {
-					const fileName = file.name || file.id.split('/').pop() || file.id;
-					return {
-						id: `/${fileName}`,
-						size: file.size,
-						date: new Date(parseFloat(file.date) * 1000),
-						type: file.type
-					};
-				}) : [];
-			} catch (error) {
-				console.error('SVAR API read error:', error);
-				return [];
-			}
-		},
+	// Initialize RestDataProvider with backend URL and authentication
+	function initializeProvider() {
+		if (!chatId || !$user?.token) return null;
 		
-		upload: async (file, path = '') => {
-			console.log('SVAR API: upload called', { file, path });
-			if (!$user?.token || !chatId) throw new Error('No authentication');
-			
-			await uploadSandboxFile($user.token, chatId, file, path);
-			return { success: true };
-		},
+		// Create the provider pointing to our sandbox API with authentication
+		const baseUrl = `http://localhost:8080/api/v1/sandboxes/${chatId}`;
+		restProvider = new AuthenticatedRestDataProvider(baseUrl, $user.token);
 		
-		remove: async (id) => {
-			console.log('SVAR API: remove called with id:', id);
-			if (!$user?.token || !chatId) throw new Error('No authentication');
-			
-			// Convert the id back to a path for our API
-			const filePath = id.startsWith('/') ? id.substring(1) : id;
-			await deleteSandboxFile($user.token, chatId, filePath);
-			return { success: true };
-		},
+		return restProvider;
+	}
+
+	// Initialize the FileManager and connect RestDataProvider
+	function init(api) {
+		console.log('Initializing FileManager API');
 		
-		createFolder: async (name, path = '') => {
-			console.log('SVAR API: createFolder called', { name, path });
-			if (!$user?.token || !chatId) throw new Error('No authentication');
-			
-			await createSandboxFolder($user.token, chatId, name, path);
-			return { success: true };
+		if (!restProvider) {
+			restProvider = initializeProvider();
 		}
-	};
+		
+		if (restProvider && api) {
+			api.setNext(restProvider);
+			console.log('RestDataProvider connected to FileManager');
+		}
+	}
 
-	// We no longer need manual loading since SVAR handles it via the API
+	// Load initial data using RestDataProvider
+	async function loadData() {
+		if (!chatId || !$user?.token) {
+			console.warn('Cannot load data: missing chatId or user token');
+			return;
+		}
+
+		try {
+			if (!restProvider) {
+				restProvider = initializeProvider();
+			}
+			
+			if (!restProvider) {
+				console.error('Failed to initialize RestDataProvider');
+				return;
+			}
+
+			console.log('Loading files and drive info...');
+			
+			// Load both files and drive info in parallel
+			const [files, info] = await Promise.all([
+				restProvider.loadFiles(),
+				restProvider.loadInfo()
+			]);
+			
+			data = files || [];
+			drive = info?.stats || { used: 0, total: 0 };
+			
+			console.log('Data loaded successfully:', { files: data, drive });
+			
+		} catch (error) {
+			console.error('Failed to load data:', error);
+			toast.error('Failed to load file browser data');
+			data = [];
+			drive = { used: 0, total: 0 };
+		}
+	}
+
+	// Initialize when component mounts
+	onMount(() => {
+		loadData();
+	});
+
+	// Reload data when chatId or user token changes
+	$: if (chatId || $user?.token) {
+		restProvider = null; // Reset provider for new chat or token change
+		loadData();
+	}
 </script>
 
-<div class="file-browser-container" style="height: {height};">
+<div
+    class="file-browser-container sticky-top"
+    style="height: {height}; z-index: 9000; position: sticky; top: 0;"
+    on:dragenter={(e) => e.stopPropagation()}
+    on:dragover={(e) => e.stopPropagation()}
+    on:drop={(e) => e.stopPropagation()}
+>
 	<Willow>
 		<Filemanager
-			data={svarData}
+			{init}
+			{data}
+			{drive}
+			mode={"table"}
 		/>
 	</Willow>
 </div>

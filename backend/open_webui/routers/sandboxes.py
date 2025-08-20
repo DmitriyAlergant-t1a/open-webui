@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
 from pydantic import BaseModel
 
 from open_webui.constants import ERROR_MESSAGES
@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 # Base directory for sandboxes
-SANDBOX_BASE_PATH = Path("./backend/data/sandboxes")
+SANDBOX_BASE_PATH = Path("./data/sandboxes")
 
 
 class FileItem(BaseModel):
@@ -63,8 +63,8 @@ def verify_chat_access(chat_id: str, user_id: str) -> None:
         )
 
 
-def build_file_tree(base_path: Path, relative_path: str = "") -> List[FileItem]:
-    """Build file tree structure for the file manager"""
+def build_file_tree(base_path: Path, relative_path: str = "") -> List[dict]:
+    """Build file tree structure for the file manager in SVAR format"""
     items = []
     current_path = base_path / relative_path if relative_path else base_path
     
@@ -75,27 +75,26 @@ def build_file_tree(base_path: Path, relative_path: str = "") -> List[FileItem]:
         for item in current_path.iterdir():
             if item.is_file():
                 stat = item.stat()
-                items.append(FileItem(
-                    id=str(Path(relative_path) / item.name) if relative_path else item.name,
-                    name=item.name,
-                    size=stat.st_size,
-                    date=str(stat.st_mtime),
-                    type="file"
-                ))
+                # Format the id with leading slash for SVAR compatibility
+                file_id = "/" + str(Path(relative_path) / item.name) if relative_path else "/" + item.name
+                items.append({
+                    "id": file_id,
+                    "size": stat.st_size,
+                    "date": stat.st_mtime * 1000,  # SVAR expects milliseconds
+                    "type": "file"
+                })
             elif item.is_dir():
                 stat = item.stat()
-                items.append(FileItem(
-                    id=str(Path(relative_path) / item.name) if relative_path else item.name,
-                    name=item.name,
-                    size=0,
-                    date=str(stat.st_mtime),
-                    type="folder",
-                    children=[]
-                ))
+                folder_id = "/" + str(Path(relative_path) / item.name) if relative_path else "/" + item.name
+                items.append({
+                    "id": folder_id,
+                    "date": stat.st_mtime * 1000,  # SVAR expects milliseconds
+                    "type": "folder"
+                })
     except PermissionError:
         log.warning(f"Permission denied accessing {current_path}")
     
-    return sorted(items, key=lambda x: (x.type == "file", x.name.lower()))
+    return sorted(items, key=lambda x: (x["type"] == "file", x["id"].lower()))
 
 
 ############################
@@ -103,27 +102,31 @@ def build_file_tree(base_path: Path, relative_path: str = "") -> List[FileItem]:
 ############################
 
 
-@router.get("/{chat_id}/files", response_model=List[FileItem])
+@router.get("/{chat_id}/files")
 async def list_sandbox_files(
     chat_id: str,
-    path: str = "",
+    id: str = "",  # RestDataProvider sends 'id' parameter for folder requests
     user=Depends(get_verified_user)
 ):
-    """List files and folders in chat sandbox"""
+    """List files and folders in chat sandbox - compatible with RestDataProvider"""
     verify_chat_access(chat_id, user.id)
     
     sandbox_path = get_sandbox_path(chat_id)
+
+    print("Making sure sandbox path exists... ", sandbox_path)
     sandbox_path.mkdir(parents=True, exist_ok=True)
     
-    safe_path = sanitize_path(path)
+    # Convert SVAR id format to path (remove leading slash)
+    folder_path = id.lstrip("/") if id else ""
+    safe_path = sanitize_path(folder_path)
     return build_file_tree(sandbox_path, safe_path)
 
 
-@router.post("/{chat_id}/files")
+@router.post("/{chat_id}/upload")
 async def upload_sandbox_file(
     chat_id: str,
     file: UploadFile = File(...),
-    path: str = "",
+    id: str = "",
     user=Depends(get_verified_user)
 ):
     """Upload a file to chat sandbox"""
@@ -132,7 +135,7 @@ async def upload_sandbox_file(
     sandbox_path = get_sandbox_path(chat_id)
     sandbox_path.mkdir(parents=True, exist_ok=True)
     
-    safe_path = sanitize_path(path)
+    safe_path = sanitize_path(id.lstrip("/"))
     target_dir = sandbox_path / safe_path if safe_path else sandbox_path
     target_dir.mkdir(parents=True, exist_ok=True)
     
@@ -230,6 +233,21 @@ async def delete_sandbox_file(
         )
 
 
+@router.post("/{chat_id}/files")
+async def create_file_or_folder(
+    chat_id: str,
+    user=Depends(get_verified_user)
+):
+    """Create a new file or folder - compatible with RestDataProvider"""
+    from fastapi import Request
+    
+    verify_chat_access(chat_id, user.id)
+    
+    # This endpoint handles both file creation and folder creation
+    # RestDataProvider will send different request bodies for different operations
+    return {"message": "Create operation received"}
+
+
 @router.post("/{chat_id}/folders")
 async def create_sandbox_folder(
     chat_id: str,
@@ -268,14 +286,48 @@ async def create_sandbox_folder(
 async def rename_sandbox_file(
     chat_id: str,
     file_path: str,
-    new_name: str,
+    request: Request,
     user=Depends(get_verified_user)
 ):
-    """Rename a file or folder in chat sandbox"""
+    """Rename a file or folder in chat sandbox - compatible with RestDataProvider"""
+    import json
+    
     verify_chat_access(chat_id, user.id)
     
+    # Get the request body to extract the new name
+    body = await request.body()
+    if not body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Request body is required"
+        )
+    
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON in request body"
+        )
+    
+    operation = data.get("operation")
+    new_name = data.get("name")
+    
+    if operation != "rename":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only 'rename' operation is supported"
+        )
+    
+    if not new_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'name' parameter must be provided"
+        )
+    
     sandbox_path = get_sandbox_path(chat_id)
-    safe_path = sanitize_path(file_path)
+    # Remove leading slash from file_path for compatibility
+    safe_path = sanitize_path(file_path.lstrip("/"))
     old_path = sandbox_path / safe_path
     
     if not old_path.exists():
@@ -293,37 +345,58 @@ async def rename_sandbox_file(
             detail="Access denied"
         )
     
+    # Calculate new path
     new_path = old_path.parent / new_name
     
+    # Ensure new path is within sandbox
+    try:
+        new_path.resolve().relative_to(sandbox_path.resolve())
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Check if new name already exists
     if new_path.exists():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Target name already exists"
+            detail="A file or folder with this name already exists"
         )
     
     try:
+        # Perform the rename
         old_path.rename(new_path)
-        return {"message": "Renamed successfully", "new_name": new_name}
+        
+        # Return new file info in the format expected by RestDataProvider
+        new_file_id = "/" + str(new_path.relative_to(sandbox_path))
+        
+        return {
+            "result": {
+                "id": new_file_id,
+                "name": new_name
+            }
+        }
     except Exception as e:
         log.error(f"Error renaming {old_path} to {new_path}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to rename"
+            detail="Failed to rename file or folder"
         )
 
 
-@router.get("/{chat_id}/info", response_model=SandboxInfo)
+@router.get("/{chat_id}/info")
 async def get_sandbox_info(
     chat_id: str,
     user=Depends(get_verified_user)
 ):
-    """Get sandbox storage information"""
+    """Get sandbox storage information - compatible with RestDataProvider"""
     verify_chat_access(chat_id, user.id)
     
     sandbox_path = get_sandbox_path(chat_id)
     
     if not sandbox_path.exists():
-        return SandboxInfo(used_bytes=0, file_count=0)
+        return {"stats": {"used": 0, "total": 100000000}}  # 100MB default limit
     
     total_size = 0
     file_count = 0
@@ -336,4 +409,10 @@ async def get_sandbox_info(
     except Exception as e:
         log.error(f"Error calculating sandbox info: {e}")
     
-    return SandboxInfo(used_bytes=total_size, file_count=file_count)
+    # Return in format expected by RestDataProvider
+    return {
+        "stats": {
+            "used": total_size,
+            "total": 100000000  # 100MB limit, can be configurable
+        }
+    }

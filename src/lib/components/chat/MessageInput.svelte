@@ -715,6 +715,13 @@
 	const onDragOver = (e) => {
 		e.preventDefault();
 
+		// Ignore drag events over the File Browser so they don't trigger chat overlay
+		const target = e.target as Element;
+		if (target && target.closest('.file-browser-container')) {
+			dragged = false;
+			return;
+		}
+
 		// Check if a file is being dragged.
 		if (e.dataTransfer?.types?.includes('Files')) {
 			dragged = true;
@@ -730,6 +737,13 @@
 	const onDrop = async (e) => {
 		e.preventDefault();
 		console.log(e);
+
+		// If dropping over the File Browser, do not attach to chat input
+		const target = e.target as Element;
+		if (target && target.closest('.file-browser-container')) {
+			dragged = false;
+			return;
+		}
 
 		if (e.dataTransfer?.files) {
 			const inputFiles = Array.from(e.dataTransfer?.files);
