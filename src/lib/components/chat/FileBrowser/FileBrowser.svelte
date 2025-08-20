@@ -26,7 +26,7 @@
 		}
 
 		loadFiles(id: string = ''): Promise<any[]> {
-			console.log("AuthenticatedRestDataProvider.loadFiles", id);
+			console.log("AuthenticatedRestDataProvider.loadFiles(id=", id, ")");
 			return super.loadFiles(id);
 		}
 		send<T>(url: string, method: string, data: any, headers: Record<string, string> = {}): Promise<T> {
@@ -50,69 +50,28 @@
 		return restProvider;
 	}
 
-	// Handle dynamic folder loading (lazy loading)
-	function handleRequestData(ev) {
-		console.log('🔍 FOLDER REQUEST EVENT TRIGGERED:', ev);
-		console.log('🔍 Event ID:', ev.id);
-		console.log('🔍 RestProvider available:', !!restProvider);
-		console.log('🔍 API available:', !!api);
-		
-		if (!restProvider || !api) {
-			console.error('❌ RestDataProvider or API not available');
-			return;
-		}
-		
-		// Fetch folder contents from server
-		const folderId = ev.id;
-		const encodedId = encodeURIComponent(folderId);
-		
-		console.log('🌐 Making API call for folder:', folderId);
-		console.log('🌐 URL:', `${restProvider.url}/files?id=${encodedId}`);
-		
-		// Use fetch directly since RestDataProvider's loadFiles doesn't support query params
-		const url = `${restProvider.url}/files?id=${encodedId}`;
-		fetch(url, {
-			headers: {
-				'Authorization': `Bearer ${restProvider.token}`
-			}
-		})
-			.then(response => {
-				console.log('📡 Response status:', response.status);
-				return response.json();
-			})
-			.then((folderData) => {
-				console.log('✅ Loaded folder data:', folderData);
-				// Provide the data back to the filemanager
-				api.exec("provide-data", { data: folderData, id: folderId });
-				console.log('📤 Data provided back to filemanager');
-			})
-			.catch((error) => {
-				console.error('❌ Error loading folder data:', error);
-				toast.error('Failed to load folder contents');
-			});
-	}
-
 	// Initialize the FileManager and connect RestDataProvider
-	function init(api) {
-		console.log('Initializing FileManager API');
-		api = api; // Store API reference for dynamic loading
-		
-		restProvider = initializeProvider();
+	function init(fileManagerApi) {
+		console.log('FileBrowser init(api)...');
 
+		api = fileManagerApi;
+		
+        if (!restProvider) {
+            restProvider = initializeProvider();
+        }
+        
+        if (!restProvider) {
+            console.error('Failed to initialize RestDataProvider');
+            return;
+        }
 		api.setNext(restProvider);
 
-		Promise.all([restProvider.loadFiles(), restProvider.loadInfo()]).then(([files, info]) => {
-			data = files;
-			drive = info.stats;
-		});
+		console.log('RestDataProvider connected to FileManager api');
 
-		console.log('RestDataProvider connected to FileManager');
-
-		// Add event handlers for file operations
 		api.on("download-file", async (ev) => {
 			try {
 				const fileId = ev.id.startsWith('/') ? ev.id.substring(1) : ev.id;
-				const downloadUrl = `http://localhost:8080/api/v1/sandboxes/${chatId}/files/${encodeURIComponent(fileId)}`;
+				const downloadUrl = `/api/v1/sandboxes/${chatId}/files/${encodeURIComponent(fileId)}`;
 				
 				const response = await fetch(downloadUrl, {
 					headers: {
@@ -145,7 +104,7 @@
 		api.on("open-file", async (ev) => {
 			try {
 				const fileId = ev.id.startsWith('/') ? ev.id.substring(1) : ev.id;
-				const openUrl = `http://localhost:8080/api/v1/sandboxes/${chatId}/files/${encodeURIComponent(fileId)}`;
+				const openUrl = `/api/v1/sandboxes/${chatId}/files/${encodeURIComponent(fileId)}`;
 				
 				const response = await fetch(openUrl, {
 					headers: {
@@ -165,9 +124,14 @@
 				toast.error('Failed to open file');
 			}
 		});
+
+		api.on("request-data", async (ev) => {
+			console.log("request-data event received: ", ev);
+			await loadDataForFolder(ev);
+		});
 	}
 
-	// Load initial data using RestDataProvider
+	// Load filesystem data for initial mount
 	async function loadData() {
 		if (!chatId || !localStorage?.token) {
 			console.warn('Cannot load data: missing chatId or user token');
@@ -184,42 +148,72 @@
 				return;
 			}
 
-			console.log('Loading files and drive info...');
-			
-			// Load both files and drive info in parallel
-			const [files, info] = await Promise.all([
-				restProvider.loadFiles(),
-				restProvider.loadInfo()
-			]);
-			
-			// Mark all folders as lazy for dynamic loading
-			data = (files || []).map(item => ({
-				...item,
-				lazy: item.type === "folder" ? true : undefined
-			}));
-			drive = info?.stats || { used: 0, total: 0 };
-			
-			console.log('📂 Data loaded successfully:', { files: data, drive });
+			console.log('Loading initial files and drive info');
+
+			await Promise.all([restProvider.loadFiles(""), restProvider.loadInfo()]).then(([files, info]) => {
+				// Ensure files is always an array and has correct date objects
+				data = Array.isArray(files) ? files : [];
+				drive = info && info.stats ? info.stats : { used: 0, total: 0 };
+			});
+
+			console.log('📂 Initial data loaded successfully:', { files: data, drive });
 			console.log('📂 Folders marked as lazy:', data.filter(item => item.lazy).map(item => item.id));
-			
 		} catch (error) {
-			console.error('Failed to load data:', error);
+			console.error('Failed to load initial data:', error);
 			toast.error('Failed to load file browser data');
 			data = [];
 			drive = { used: 0, total: 0 };
 		}
 	}
 
-	// Initialize when component mounts
+	// Load data for a specific folder when requested by the file manager
+	async function loadDataForFolder(ev) {
+		const nodeId = ev.id || "";
+		
+		if (!chatId || !localStorage?.token) {
+			console.warn('Cannot load folder data: missing chatId or user token');
+			return;
+		}
+
+		if (!restProvider) {
+			restProvider = initializeProvider();
+		}
+		
+		if (!restProvider) {
+			console.error('Failed to initialize RestDataProvider for folder loading');
+			return;
+		}
+
+		try {
+			console.log('Loading folder data for nodeId: ', nodeId);
+			
+			const folderData = await restProvider.loadFiles(nodeId);
+			const processedData = Array.isArray(folderData) ? folderData : [];
+			
+			console.log('📂 Folder data loaded, providing to API:', { nodeId, data: processedData });
+			
+			// Provide the data to the file manager
+			api.exec("provide-data", { 
+				id: nodeId, 
+				data: processedData 
+			});
+			
+		} catch (error) {
+			console.error('Failed to load folder data:', error);
+			toast.error('Failed to load folder contents');
+		}
+	}
+
 	onMount(() => {
 		loadData();
 	});
 
 	// Reload data when chatId changes
-	$: if (chatId) {
-		restProvider = null; // Reset provider for new chat
-		loadData();
-	}
+	// $: if (chatId) {
+	// 	api.exec("request-data", {
+	// 		id: "/",
+	// 	});
+	// }
 </script>
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->

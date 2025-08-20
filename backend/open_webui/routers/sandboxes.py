@@ -104,8 +104,10 @@ def build_file_tree(base_path: Path, relative_path: str = "") -> List[dict]:
 
 
 @router.get("/{chat_id}/files")
+@router.get("/{chat_id}/files/{folder_id:path}")
 async def list_sandbox_files(
     chat_id: str,
+    folder_id: str = None,
     id: str = "",  # RestDataProvider sends 'id' parameter for folder requests
     user=Depends(get_verified_user)
 ):
@@ -117,8 +119,14 @@ async def list_sandbox_files(
     print("Making sure sandbox path exists... ", sandbox_path)
     sandbox_path.mkdir(parents=True, exist_ok=True)
     
-    # Convert SVAR id format to path (remove leading slash)
-    folder_path = id.lstrip("/") if id else ""
+    # Handle both path parameter and query parameter approaches
+    if folder_id is not None:
+        # URL path approach: /files/testdir
+        folder_path = folder_id
+    else:
+        # Query parameter approach: /files?id=/testdir
+        folder_path = id.lstrip("/") if id else ""
+    
     safe_path = sanitize_path(folder_path)
     return build_file_tree(sandbox_path, safe_path)
 
