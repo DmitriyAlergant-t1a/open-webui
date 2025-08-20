@@ -241,4 +241,9 @@
 		border-radius: 24px;
 		overflow: hidden;
 	}
+	
+	/* Fix for Files label wrapping */
+	.file-browser-container :global(.wx-name) {
+		white-space: nowrap;
+	}
 </style>
