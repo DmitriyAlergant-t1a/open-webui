@@ -24,7 +24,7 @@
 
 
 <div class="bg-transparent flex justify-center">
-	<div class="file-browser-panel max-w-6xl rounded-3xl">
+	<div class="file-browser-panel max-w-6xl w-full shadow-lg rounded-3xl border border-gray-50 dark:border-gray-850 hover:border-gray-100 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800 transition">
 		<!-- Collapsible content -->
 		{#if expanded}
 			<div class="p-3">
@@ -36,10 +36,10 @@
 
 <style>
 	.file-browser-panel {
-		background: white;
+		background: rgb(255 255 255 / 0.9);
 	}
 	
 	:global(.dark) .file-browser-panel {
-		background: #1f2937;
+		background: rgb(156 163 175 / 0.05);
 	}
 </style>

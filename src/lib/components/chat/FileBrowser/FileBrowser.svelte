@@ -237,8 +237,8 @@
 <style>
 	.file-browser-container {
 		width: 100%;
-		border: 1px solid #e2e8f0;
-		border-radius: 8px;
+		border: none;
+		border-radius: 24px;
 		overflow: hidden;
 	}
 </style>
