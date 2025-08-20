@@ -55,6 +55,64 @@
 			api.setNext(restProvider);
 			console.log('RestDataProvider connected to FileManager');
 		}
+
+		// Add event handlers for file operations
+		api.on("download-file", async (ev) => {
+			try {
+				const fileId = ev.id.startsWith('/') ? ev.id.substring(1) : ev.id;
+				const downloadUrl = `http://localhost:8080/api/v1/sandboxes/${chatId}/files/${encodeURIComponent(fileId)}`;
+				
+				const response = await fetch(downloadUrl, {
+					headers: {
+						'Authorization': `Bearer ${$user.token}`
+					}
+				});
+				
+				if (!response.ok) {
+					throw new Error(`Download failed: ${response.statusText}`);
+				}
+				
+				const blob = await response.blob();
+				const url = window.URL.createObjectURL(blob);
+				const filename = fileId.split('/').pop() || 'download';
+				
+				const link = document.createElement('a');
+				link.href = url;
+				link.download = filename;
+				link.style.display = 'none';
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+				window.URL.revokeObjectURL(url);
+			} catch (error) {
+				console.error('Download error:', error);
+				toast.error('Failed to download file');
+			}
+		});
+
+		api.on("open-file", async (ev) => {
+			try {
+				const fileId = ev.id.startsWith('/') ? ev.id.substring(1) : ev.id;
+				const openUrl = `http://localhost:8080/api/v1/sandboxes/${chatId}/files/${encodeURIComponent(fileId)}`;
+				
+				const response = await fetch(openUrl, {
+					headers: {
+						'Authorization': `Bearer ${$user.token}`
+					}
+				});
+				
+				if (!response.ok) {
+					throw new Error(`Open failed: ${response.statusText}`);
+				}
+				
+				const blob = await response.blob();
+				const url = window.URL.createObjectURL(blob);
+				window.open(url, '_blank');
+			} catch (error) {
+				console.error('Open error:', error);
+				toast.error('Failed to open file');
+			}
+		});
 	}
 
 	// Load initial data using RestDataProvider
