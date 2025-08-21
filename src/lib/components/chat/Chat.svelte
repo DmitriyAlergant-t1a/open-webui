@@ -129,7 +129,7 @@
 	let codeInterpreterEnabled = false;
 
 	let showCommands = false;
-	let showFileBrowser = false;
+	let showSandboxFileManager = false;
 
 	let generating = false;
 	let generationController = null;
@@ -165,6 +165,7 @@
 		selectedFilterIds = [];
 		webSearchEnabled = false;
 		imageGenerationEnabled = false;
+		showSandboxFileManager = false;
 
 		const storageChatInput = sessionStorage.getItem(
 			`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`
@@ -2253,8 +2254,8 @@
 									bind:webSearchEnabled
 									bind:atSelectedModel
 									bind:showCommands
-									bind:showFileBrowser
-									enableFileBrowserFeature={true}
+									bind:showSandboxFileManager
+									enableSandboxFileManagerFeature={true}
 									toolServers={$toolServers}
 									{generating}
 									{stopResponse}
@@ -2310,7 +2311,7 @@
 									bind:webSearchEnabled
 									bind:atSelectedModel
 									bind:showCommands
-									bind:showFileBrowser
+									bind:showSandboxFileManager
 									toolServers={$toolServers}
 									{stopResponse}
 									{createMessagePair}

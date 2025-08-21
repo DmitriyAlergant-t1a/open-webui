@@ -76,7 +76,7 @@
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import InputVariablesModal from './MessageInput/InputVariablesModal.svelte';
 	import Voice from '../icons/Voice.svelte';
-	import FileBrowser from './FileBrowser/FileBrowser.svelte';
+	import { SandboxFileManager, SandboxSecretsManager } from './AgenticSandbox';
 	const i18n = getContext('i18n');
 
 	export let onChange: Function = () => {};
@@ -106,8 +106,9 @@
 	export let imageGenerationEnabled = false;
 	export let webSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
-	export let showFileBrowser = false;
-	export let enableFileBrowserFeature = false;
+	export let showSandboxFileManager = false;
+	export let enableSandboxFileManagerFeature = false;
+	export let showSandboxSecretsManager = false;
 
 	let showInputVariablesModal = false;
 	let inputVariables = {};
@@ -1596,12 +1597,16 @@
 									{/if}
 								</div>
 
-								{#if showFileBrowser && enableFileBrowserFeature && $chatId}
+								{#if (showSandboxFileManager || showSandboxSecretsManager) && enableSandboxFileManagerFeature && $chatId}
 									<div class="absolute bottom-full left-0 right-0 mb-2 z-50">
 										<div class="bg-transparent flex justify-center">
 											<div class="file-browser-panel max-w-6xl w-full shadow-lg rounded-3xl border border-gray-50 dark:border-gray-850 hover:border-gray-100 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800 transition">
 												<div class="p-3">
-													<FileBrowser chatId={$chatId} height="350px" />
+													{#if showSandboxFileManager}
+														<SandboxFileManager chatId={$chatId} height="350px" />
+													{:else if showSandboxSecretsManager}
+														<SandboxSecretsManager chatId={$chatId} height="350px" />
+													{/if}
 												</div>
 											</div>
 										</div>
@@ -1678,7 +1683,7 @@
 											</div>
 										</InputMenu>
 
-										{#if enableFileBrowserFeature}
+										{#if enableSandboxFileManagerFeature}
 											<Tooltip content="Files Sandbox">
 												<button
 													class="text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 self-center"
@@ -1703,7 +1708,7 @@
 																if (newChat) {
 																	await chatId.set(newChat.id);
 																	await chatTitle.set(newChat.title);
-																	// Note: Don't navigate away as it would reset showFileBrowser state
+																	// Note: Don't navigate away as it would reset showSandboxFileManager state
 																	// The URL will be updated when the user sends their first message
 																}
 															} catch (error) {
@@ -1712,7 +1717,11 @@
 															}
 														}
 														
-														showFileBrowser = !showFileBrowser;
+														// Close secrets manager if opening file manager
+													if (!showSandboxFileManager) {
+														showSandboxSecretsManager = false;
+													}
+													showSandboxFileManager = !showSandboxFileManager;
 																	}}
 													aria-label="Toggle Files Sandbox"
 												>
@@ -1727,6 +1736,63 @@
 														class="w-5 h-5"
 													>
 														<path d="M10 4H4C3.44772 4 3 4.44772 3 5V19C3 19.5523 3.44772 20 4 20H20C20.5523 20 21 19.5523 21 19V8C21 7.44772 20.5523 7 20 7H12L10 4Z"/>
+													</svg>
+												</button>
+											</Tooltip>
+
+											<Tooltip content="Sandbox Secrets">
+												<button
+													class="text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 self-center"
+													type="button"
+													on:click={async () => {
+														// If no chat ID exists and we're not in temporary chat mode, create a minimal chat
+														if (!$chatId && !$temporaryChatEnabled) {
+															try {
+																const minimalChat = {
+																	title: $i18n.t('New Chat'),
+																	models: selectedModelIds,
+																	params: {},
+																	history: {
+																		messages: {},
+																		currentId: null
+																	},
+																	messages: [],
+																	timestamp: Date.now()
+																};
+
+																const newChat = await createNewChat(localStorage.token, minimalChat, null);
+																if (newChat) {
+																	await chatId.set(newChat.id);
+																	await chatTitle.set(newChat.title);
+																	// Note: Don't navigate away as it would reset showSandboxSecretsManager state
+																	// The URL will be updated when the user sends their first message
+																}
+															} catch (error) {
+																console.error('Failed to create minimal chat for secrets manager:', error);
+																// Continue to show secrets manager even if creation fails
+															}
+														}
+														
+														// Close file manager if opening secrets manager
+														if (!showSandboxSecretsManager) {
+															showSandboxFileManager = false;
+														}
+														showSandboxSecretsManager = !showSandboxSecretsManager;
+													}}
+													aria-label="Toggle Environment Variables"
+												>
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														class="w-5 h-5"
+													>
+														<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+														<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
 													</svg>
 												</button>
 											</Tooltip>

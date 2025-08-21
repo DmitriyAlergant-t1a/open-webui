@@ -52,7 +52,7 @@
 
 	// Initialize the FileManager and connect RestDataProvider
 	function init(fileManagerApi) {
-		console.log('FileBrowser init(api)...');
+		console.log('SandboxFileManager init(api)...');
 
 		api = fileManagerApi;
 		

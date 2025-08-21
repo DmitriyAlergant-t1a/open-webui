@@ -47,7 +47,6 @@
 	export let selectedFilterIds = [];
 
 	export let showCommands = false;
-	export let showFileBrowser = false;
 
 	export let imageGenerationEnabled = false;
 	export let codeInterpreterEnabled = false;
@@ -219,8 +218,7 @@
 					bind:webSearchEnabled
 					bind:atSelectedModel
 					bind:showCommands
-					bind:showFileBrowser
-					enableFileBrowserFeature={true}
+					enableSandboxFileManagerFeature={true}
 					{toolServers}
 					{stopResponse}
 					{createMessagePair}
