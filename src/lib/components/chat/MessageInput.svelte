@@ -14,6 +14,7 @@
 	import { pickAndDownloadFile } from '$lib/utils/onedrive-file-picker';
 
 	import { onMount, tick, getContext, createEventDispatcher, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	const dispatch = createEventDispatcher();
 
 	import {
@@ -30,7 +31,9 @@
 		TTSWorker,
 		temporaryChatEnabled,
 		chatId,
-		chatTitle
+		chatTitle,
+		chats,
+		currentChatPage
 	} from '$lib/stores';
 
 	import {
@@ -50,7 +53,7 @@
 	import { uploadFile } from '$lib/apis/files';
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
-	import { createNewChat } from '$lib/apis/chats';
+	import { createNewChat, getChatList } from '$lib/apis/chats';
 
 	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
@@ -1684,7 +1687,7 @@
 										</InputMenu>
 
 										{#if enableSandboxFileManagerFeature}
-											<Tooltip content="Files Sandbox">
+											<Tooltip content="Agent Sandbox Files">
 												<button
 													class="text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 self-center"
 													type="button"
@@ -1708,8 +1711,11 @@
 																if (newChat) {
 																	await chatId.set(newChat.id);
 																	await chatTitle.set(newChat.title);
-																	// Note: Don't navigate away as it would reset showSandboxFileManager state
-																	// The URL will be updated when the user sends their first message
+																	// Refresh the chat list in the sidebar
+																	currentChatPage.set(1);
+																	await chats.set(await getChatList(localStorage.token, $currentChatPage));
+																	// Navigate to the new chat and preserve sandbox state via URL params
+																	await goto(`/c/${newChat.id}?sandbox=files`);
 																}
 															} catch (error) {
 																console.error('Failed to create minimal chat for file browser:', error);
@@ -1740,7 +1746,7 @@
 												</button>
 											</Tooltip>
 
-											<Tooltip content="Sandbox Secrets">
+											<Tooltip content="AgentSandbox Secrets">
 												<button
 													class="text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 self-center"
 													type="button"
@@ -1764,8 +1770,11 @@
 																if (newChat) {
 																	await chatId.set(newChat.id);
 																	await chatTitle.set(newChat.title);
-																	// Note: Don't navigate away as it would reset showSandboxSecretsManager state
-																	// The URL will be updated when the user sends their first message
+																	// Refresh the chat list in the sidebar
+																	currentChatPage.set(1);
+																	await chats.set(await getChatList(localStorage.token, $currentChatPage));
+																	// Navigate to the new chat and preserve sandbox state via URL params
+																	await goto(`/c/${newChat.id}?sandbox=secrets`);
 																}
 															} catch (error) {
 																console.error('Failed to create minimal chat for secrets manager:', error);

@@ -3,6 +3,7 @@
 	import { marked } from 'marked';
 
 	import { onMount, getContext, tick, createEventDispatcher } from 'svelte';
+	import { page } from '$app/stores';
 	import { blur, fade } from 'svelte/transition';
 
 	const dispatch = createEventDispatcher();
@@ -51,6 +52,8 @@
 	export let imageGenerationEnabled = false;
 	export let codeInterpreterEnabled = false;
 	export let webSearchEnabled = false;
+	export let showSandboxFileManager = false;
+	export let showSandboxSecretsManager = false;
 
 	export let onSelect = (e) => {};
 	export let onChange = (e) => {};
@@ -67,7 +70,16 @@
 
 	$: models = selectedModels.map((id) => $_models.find((m) => m.id === id));
 
-	onMount(() => {});
+	onMount(() => {
+		// Check for sandbox URL parameters and restore sandbox state
+		const urlParams = new URLSearchParams($page.url.search);
+		const sandboxParam = urlParams.get('sandbox');
+		if (sandboxParam === 'files') {
+			showSandboxFileManager = true;
+		} else if (sandboxParam === 'secrets') {
+			showSandboxSecretsManager = true;
+		}
+	});
 </script>
 
 <div class="m-auto w-full max-w-6xl px-2 @2xl:px-20 translate-y-6 py-24 text-center">
@@ -218,6 +230,8 @@
 					bind:webSearchEnabled
 					bind:atSelectedModel
 					bind:showCommands
+					bind:showSandboxFileManager
+					bind:showSandboxSecretsManager
 					enableSandboxFileManagerFeature={true}
 					{toolServers}
 					{stopResponse}

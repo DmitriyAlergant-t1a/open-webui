@@ -130,6 +130,7 @@
 
 	let showCommands = false;
 	let showSandboxFileManager = false;
+	let showSandboxSecretsManager = false;
 
 	let generating = false;
 	let generationController = null;
@@ -166,6 +167,7 @@
 		webSearchEnabled = false;
 		imageGenerationEnabled = false;
 		showSandboxFileManager = false;
+		showSandboxSecretsManager = false;
 
 		const storageChatInput = sessionStorage.getItem(
 			`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`
@@ -192,6 +194,16 @@
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
 					}
 				} catch (e) {}
+			}
+
+			// Check for sandbox URL parameters and restore sandbox state
+			await tick(); // Wait for page store to update
+			const urlParams = new URLSearchParams($page.url.search);
+			const sandboxParam = urlParams.get('sandbox');
+			if (sandboxParam === 'files') {
+				showSandboxFileManager = true;
+			} else if (sandboxParam === 'secrets') {
+				showSandboxSecretsManager = true;
 			}
 
 			const chatInput = document.getElementById('chat-input');
@@ -2046,6 +2058,25 @@
 		let _chatId = $chatId;
 
 		if (!$temporaryChatEnabled) {
+			// If we already have a chat ID, check if the chat exists first
+			if (_chatId) {
+				try {
+					chat = await getChatById(localStorage.token, _chatId);
+					if (chat) {
+						// Chat exists, just update it with the new history/messages
+						chat = await updateChatById(localStorage.token, _chatId, {
+							history: history,
+							messages: createMessagesList(history, history.currentId),
+						});
+						console.log('Updated existing chat:', _chatId);
+						return _chatId;
+					}
+				} catch (error) {
+					console.log('Chat not found, creating new one:', _chatId);
+				}
+			}
+
+			// Chat doesn't exist or no chat ID, create a new one
 			chat = await createNewChat(
 				localStorage.token,
 				{
@@ -2255,6 +2286,7 @@
 									bind:atSelectedModel
 									bind:showCommands
 									bind:showSandboxFileManager
+									bind:showSandboxSecretsManager
 									enableSandboxFileManagerFeature={true}
 									toolServers={$toolServers}
 									{generating}
@@ -2312,6 +2344,7 @@
 									bind:atSelectedModel
 									bind:showCommands
 									bind:showSandboxFileManager
+									bind:showSandboxSecretsManager
 									toolServers={$toolServers}
 									{stopResponse}
 									{createMessagePair}
