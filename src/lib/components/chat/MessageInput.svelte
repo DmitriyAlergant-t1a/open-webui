@@ -14,6 +14,7 @@
 	import { pickAndDownloadFile } from '$lib/utils/onedrive-file-picker';
 
 	import { onMount, tick, getContext, createEventDispatcher, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	const dispatch = createEventDispatcher();
 
 	import {
@@ -28,7 +29,11 @@
 		user as _user,
 		showControls,
 		TTSWorker,
-		temporaryChatEnabled
+		temporaryChatEnabled,
+		chatId,
+		chatTitle,
+		chats,
+		currentChatPage
 	} from '$lib/stores';
 
 	import {
@@ -49,6 +54,7 @@
 	import { uploadFile } from '$lib/apis/files';
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
+	import { createNewChat, getChatList } from '$lib/apis/chats';
 
 	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
@@ -75,6 +81,7 @@
 	import InputVariablesModal from './MessageInput/InputVariablesModal.svelte';
 	import Voice from '../icons/Voice.svelte';
 	import { getSessionUser } from '$lib/apis/auths';
+	import { SandboxFileManager, SandboxSecretsManager } from './AgenticSandbox';
 	const i18n = getContext('i18n');
 
 	export let onChange: Function = () => {};
@@ -104,6 +111,9 @@
 	export let imageGenerationEnabled = false;
 	export let webSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
+	export let showSandboxFileManager = false;
+	export let enableSandboxFileManagerFeature = false;
+	export let showSandboxSecretsManager = false;
 
 	let showInputVariablesModal = false;
 	let inputVariables = {};
@@ -753,6 +763,13 @@
 	const onDragOver = (e) => {
 		e.preventDefault();
 
+		// Ignore drag events over the File Browser so they don't trigger chat overlay
+		const target = e.target as Element;
+		if (target && target.closest('.file-browser-container')) {
+			dragged = false;
+			return;
+		}
+
 		// Check if a file is being dragged.
 		if (e.dataTransfer?.types?.includes('Files')) {
 			dragged = true;
@@ -768,6 +785,13 @@
 	const onDrop = async (e) => {
 		e.preventDefault();
 		console.log(e);
+
+		// If dropping over the File Browser, do not attach to chat input
+		const target = e.target as Element;
+		if (target && target.closest('.file-browser-container')) {
+			dragged = false;
+			return;
+		}
 
 		if (e.dataTransfer?.files) {
 			const inputFiles = Array.from(e.dataTransfer?.files);
@@ -1639,6 +1663,22 @@
 									{/if}
 								</div>
 
+								{#if (showSandboxFileManager || showSandboxSecretsManager) && enableSandboxFileManagerFeature && $chatId}
+									<div class="absolute bottom-full left-0 right-0 mb-2 z-50">
+										<div class="bg-transparent flex justify-center">
+											<div class="file-browser-panel max-w-6xl w-full shadow-lg rounded-3xl border border-gray-50 dark:border-gray-850 hover:border-gray-100 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800 transition">
+												<div class="p-3">
+													{#if showSandboxFileManager}
+														<SandboxFileManager chatId={$chatId} height="350px" />
+													{:else if showSandboxSecretsManager}
+														<SandboxSecretsManager chatId={$chatId} height="350px" />
+													{/if}
+												</div>
+											</div>
+										</div>
+									</div>
+								{/if}
+
 								<div class=" flex justify-between mt-0.5 mb-2.5 mx-0.5 max-w-full" dir="ltr">
 									<div class="ml-1 self-end flex items-center flex-1 max-w-[80%]">
 										<InputMenu
@@ -1708,6 +1748,127 @@
 												</svg>
 											</div>
 										</InputMenu>
+
+										{#if enableSandboxFileManagerFeature}
+											<Tooltip content="Agent Sandbox Files">
+												<button
+													class="text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 self-center"
+													type="button"
+													on:click={async () => {
+																		// If no chat ID exists and we're not in temporary chat mode, create a minimal chat
+														if (!$chatId && !$temporaryChatEnabled) {
+																			try {
+																const minimalChat = {
+																	title: $i18n.t('New Chat'),
+																	models: selectedModelIds,
+																	params: {},
+																	history: {
+																		messages: {},
+																		currentId: null
+																	},
+																	messages: [],
+																	timestamp: Date.now()
+																};
+
+																const newChat = await createNewChat(localStorage.token, minimalChat, null);
+																if (newChat) {
+																	await chatId.set(newChat.id);
+																	await chatTitle.set(newChat.title);
+																	// Refresh the chat list in the sidebar
+																	currentChatPage.set(1);
+																	await chats.set(await getChatList(localStorage.token, $currentChatPage));
+																	// Navigate to the new chat and preserve sandbox state via URL params
+																	await goto(`/c/${newChat.id}?sandbox=files`);
+																}
+															} catch (error) {
+																console.error('Failed to create minimal chat for file browser:', error);
+																// Continue to show file browser even if creation fails
+															}
+														}
+														
+														// Close secrets manager if opening file manager
+													if (!showSandboxFileManager) {
+														showSandboxSecretsManager = false;
+													}
+													showSandboxFileManager = !showSandboxFileManager;
+																	}}
+													aria-label="Toggle Files Sandbox"
+												>
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														class="w-5 h-5"
+													>
+														<path d="M10 4H4C3.44772 4 3 4.44772 3 5V19C3 19.5523 3.44772 20 4 20H20C20.5523 20 21 19.5523 21 19V8C21 7.44772 20.5523 7 20 7H12L10 4Z"/>
+													</svg>
+												</button>
+											</Tooltip>
+
+											<Tooltip content="AgentSandbox Secrets">
+												<button
+													class="text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 self-center"
+													type="button"
+													on:click={async () => {
+														// If no chat ID exists and we're not in temporary chat mode, create a minimal chat
+														if (!$chatId && !$temporaryChatEnabled) {
+															try {
+																const minimalChat = {
+																	title: $i18n.t('New Chat'),
+																	models: selectedModelIds,
+																	params: {},
+																	history: {
+																		messages: {},
+																		currentId: null
+																	},
+																	messages: [],
+																	timestamp: Date.now()
+																};
+
+																const newChat = await createNewChat(localStorage.token, minimalChat, null);
+																if (newChat) {
+																	await chatId.set(newChat.id);
+																	await chatTitle.set(newChat.title);
+																	// Refresh the chat list in the sidebar
+																	currentChatPage.set(1);
+																	await chats.set(await getChatList(localStorage.token, $currentChatPage));
+																	// Navigate to the new chat and preserve sandbox state via URL params
+																	await goto(`/c/${newChat.id}?sandbox=secrets`);
+																}
+															} catch (error) {
+																console.error('Failed to create minimal chat for secrets manager:', error);
+																// Continue to show secrets manager even if creation fails
+															}
+														}
+														
+														// Close file manager if opening secrets manager
+														if (!showSandboxSecretsManager) {
+															showSandboxFileManager = false;
+														}
+														showSandboxSecretsManager = !showSandboxSecretsManager;
+													}}
+													aria-label="Toggle Environment Variables"
+												>
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														class="w-5 h-5"
+													>
+														<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+														<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+													</svg>
+												</button>
+											</Tooltip>
+										{/if}
 
 										{#if $_user && (showToolsButton || (toggleFilters && toggleFilters.length > 0) || showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton)}
 											<div
@@ -1847,6 +2008,7 @@
 									</div>
 
 									<div class="self-end flex space-x-1 mr-1 shrink-0">
+										
 										{#if (!history?.currentId || history.messages[history.currentId]?.done == true) && ($_user?.role === 'admin' || ($_user?.permissions?.chat?.stt ?? true))}
 											<!-- {$i18n.t('Record voice')} -->
 											<Tooltip content={$i18n.t('Dictate')}>
@@ -2029,3 +2191,13 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.file-browser-panel {
+		background: rgb(255 255 255 / 0.9);
+	}
+	
+	:global(.dark) .file-browser-panel {
+		background: rgb(156 163 175 / 0.05);
+	}
+</style>
