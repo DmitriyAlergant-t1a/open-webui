@@ -167,7 +167,7 @@ async def upload_sandbox_file(
         )
 
 
-@router.get("/{chat_id}/files/{file_path:path}")
+@router.get("/{chat_id}/file/{file_path:path}")
 async def download_sandbox_file(
     chat_id: str,
     file_path: str,
