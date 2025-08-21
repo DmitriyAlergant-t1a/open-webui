@@ -28,7 +28,9 @@
 		user as _user,
 		showControls,
 		TTSWorker,
-		temporaryChatEnabled
+		temporaryChatEnabled,
+		chatId,
+		chatTitle
 	} from '$lib/stores';
 
 	import {
@@ -48,6 +50,7 @@
 	import { uploadFile } from '$lib/apis/files';
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
+	import { createNewChat } from '$lib/apis/chats';
 
 	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
@@ -73,6 +76,7 @@
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import InputVariablesModal from './MessageInput/InputVariablesModal.svelte';
 	import Voice from '../icons/Voice.svelte';
+	import FileBrowser from './FileBrowser/FileBrowser.svelte';
 	const i18n = getContext('i18n');
 
 	export let onChange: Function = () => {};
@@ -102,6 +106,8 @@
 	export let imageGenerationEnabled = false;
 	export let webSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
+	export let showFileBrowser = false;
+	export let enableFileBrowserFeature = false;
 
 	let showInputVariablesModal = false;
 	let inputVariables = {};
@@ -1590,6 +1596,18 @@
 									{/if}
 								</div>
 
+								{#if showFileBrowser && enableFileBrowserFeature && $chatId}
+									<div class="absolute bottom-full left-0 right-0 mb-2 z-50">
+										<div class="bg-transparent flex justify-center">
+											<div class="file-browser-panel max-w-6xl w-full shadow-lg rounded-3xl border border-gray-50 dark:border-gray-850 hover:border-gray-100 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800 transition">
+												<div class="p-3">
+													<FileBrowser chatId={$chatId} height="350px" />
+												</div>
+											</div>
+										</div>
+									</div>
+								{/if}
+
 								<div class=" flex justify-between mt-0.5 mb-2.5 mx-0.5 max-w-full" dir="ltr">
 									<div class="ml-1 self-end flex items-center flex-1 max-w-[80%]">
 										<InputMenu
@@ -1659,6 +1677,60 @@
 												</svg>
 											</div>
 										</InputMenu>
+
+										{#if enableFileBrowserFeature}
+											<Tooltip content="Files Sandbox">
+												<button
+													class="text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 self-center"
+													type="button"
+													on:click={async () => {
+																		// If no chat ID exists and we're not in temporary chat mode, create a minimal chat
+														if (!$chatId && !$temporaryChatEnabled) {
+																			try {
+																const minimalChat = {
+																	title: $i18n.t('New Chat'),
+																	models: selectedModelIds,
+																	params: {},
+																	history: {
+																		messages: {},
+																		currentId: null
+																	},
+																	messages: [],
+																	timestamp: Date.now()
+																};
+
+																const newChat = await createNewChat(localStorage.token, minimalChat, null);
+																if (newChat) {
+																	await chatId.set(newChat.id);
+																	await chatTitle.set(newChat.title);
+																	// Note: Don't navigate away as it would reset showFileBrowser state
+																	// The URL will be updated when the user sends their first message
+																}
+															} catch (error) {
+																console.error('Failed to create minimal chat for file browser:', error);
+																// Continue to show file browser even if creation fails
+															}
+														}
+														
+														showFileBrowser = !showFileBrowser;
+																	}}
+													aria-label="Toggle Files Sandbox"
+												>
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														class="w-5 h-5"
+													>
+														<path d="M10 4H4C3.44772 4 3 4.44772 3 5V19C3 19.5523 3.44772 20 4 20H20C20.5523 20 21 19.5523 21 19V8C21 7.44772 20.5523 7 20 7H12L10 4Z"/>
+													</svg>
+												</button>
+											</Tooltip>
+										{/if}
 
 										{#if $_user && (showToolsButton || (toggleFilters && toggleFilters.length > 0) || showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton)}
 											<div
@@ -1798,6 +1870,7 @@
 									</div>
 
 									<div class="self-end flex space-x-1 mr-1 shrink-0">
+										
 										{#if (!history?.currentId || history.messages[history.currentId]?.done == true) && ($_user?.role === 'admin' || ($_user?.permissions?.chat?.stt ?? true))}
 											<!-- {$i18n.t('Record voice')} -->
 											<Tooltip content={$i18n.t('Dictate')}>
@@ -1980,3 +2053,13 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.file-browser-panel {
+		background: rgb(255 255 255 / 0.9);
+	}
+	
+	:global(.dark) .file-browser-panel {
+		background: rgb(156 163 175 / 0.05);
+	}
+</style>
