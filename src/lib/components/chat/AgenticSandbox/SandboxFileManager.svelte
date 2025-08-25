@@ -4,6 +4,7 @@
 	import { Filemanager, Willow } from 'wx-svelte-filemanager';
 	
 	import { toast } from 'svelte-sonner';
+	import { WEBUI_API_BASE_URL } from '$lib/constants';
 
 	export let chatId: string;
 	export let height: string = '400px';
@@ -44,7 +45,7 @@
 		if (!chatId || !localStorage?.token) return null;
 		
 		// Create the provider pointing to our sandbox API with authentication
-		const baseUrl = `/api/v1/sandboxes/${chatId}`;
+		const baseUrl = `${WEBUI_API_BASE_URL}/sandboxes/${chatId}`;
 		restProvider = new AuthenticatedRestDataProvider(baseUrl, localStorage.token);
 		
 		return restProvider;
@@ -71,7 +72,7 @@
 		api.on("download-file", async (ev) => {
 			try {
 				const fileId = ev.id.startsWith('/') ? ev.id.substring(1) : ev.id;
-				const downloadUrl = `/api/v1/sandboxes/${chatId}/file/${encodeURIComponent(fileId)}`;
+				const downloadUrl = `${WEBUI_API_BASE_URL}/sandboxes/${chatId}/file/${encodeURIComponent(fileId)}`;
 				
 				const response = await fetch(downloadUrl, {
 					headers: {
@@ -104,7 +105,7 @@
 		api.on("open-file", async (ev) => {
 			try {
 				const fileId = ev.id.startsWith('/') ? ev.id.substring(1) : ev.id;
-				const openUrl = `/api/v1/sandboxes/${chatId}/file/${encodeURIComponent(fileId)}`;
+				const openUrl = `${WEBUI_API_BASE_URL}/sandboxes/${chatId}/file/${encodeURIComponent(fileId)}`;
 				
 				const response = await fetch(openUrl, {
 					headers: {

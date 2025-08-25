@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { WEBUI_API_BASE_URL } from '$lib/constants';
 
 	export let chatId: string;
 	export let height: string = '350px';
@@ -21,7 +22,7 @@
 
 		loading = true;
 		try {
-			const response = await fetch(`/api/v1/sandboxes/${chatId}/env`, {
+			const response = await fetch(`${WEBUI_API_BASE_URL}/sandboxes/${chatId}/env`, {
 				headers: {
 					'Authorization': `Bearer ${localStorage.token}`
 				}
@@ -49,7 +50,7 @@
 
 		saving = true;
 		try {
-			const response = await fetch(`/api/v1/sandboxes/${chatId}/env`, {
+			const response = await fetch(`${WEBUI_API_BASE_URL}/sandboxes/${chatId}/env`, {
 				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${localStorage.token}`,
