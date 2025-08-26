@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 # Base directory for sandboxes
-SANDBOX_BASE_PATH = Path("./data/sandboxes")
+SANDBOX_BASE_PATH = Path("/app/backend/data/sandboxes")
 
 
 class FileItem(BaseModel):
